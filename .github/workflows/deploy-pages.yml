@@ -27,6 +27,8 @@ jobs:
       - uses: actions/configure-pages@v5
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+        env:
+          VITE_BASE: /ErrorLoop/
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist

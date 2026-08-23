@@ -1,14 +1,170 @@
 import { imageConfig } from '../config/imageConfig'
 import type { CropPoint, ImageAsset, ImageMode } from '../types'
 import { generateId } from '../utils/id'
-const id=()=>generateId('image')
-export async function makeAsset(file:File, mode:ImageMode|number='gray'):Promise<ImageAsset>{ const selected:ImageMode=typeof mode==='string'?mode:'gray';if(!imageConfig.accepted.includes(file.type)) throw new Error('仅支持 JPG、PNG 或 WebP 图片'); if(file.size>imageConfig.maxFileSize) throw new Error('图片超过 20MB，请先压缩后上传')
- const original=await toData(file,imageConfig.originalMaxEdge,imageConfig.originalQuality,'original'); const scanned= selected==='original'?original:await toData(file,imageConfig.scannedMaxEdge,imageConfig.scannedQuality,selected); return {id:id(),order:0,original,scanned,mode:selected,name:file.name,cropPoints:fullPoints(),rotation:0} }
-export const fullPoints=():CropPoint[]=>[{x:0,y:0},{x:1,y:0},{x:1,y:1},{x:0,y:1}]
-type ScannerInstance={findPaperContour:(mat:any)=>any;getCornerPoints:(contour:any)=>any;extractPaper:(image:HTMLImageElement,w:number,h:number,points:any)=>HTMLCanvasElement|null}
-async function engine():Promise<{cv:any;scanner:ScannerInstance}>{const cvMod:any=await import('@techstark/opencv-js');const cv=cvMod.default||cvMod||window.cv;const scanMod:any=await import('jscanify/client');const Scanner=scanMod.default||scanMod||window.jscanify;if(!cv?.Mat||!Scanner)throw new Error('扫描组件加载失败');return {cv,scanner:new Scanner()}}
-export async function detectDocument(original:string):Promise<CropPoint[]|null>{const image=await loadImage(original);const max=1000,scale=Math.min(1,max/Math.max(image.naturalWidth,image.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.round(image.naturalWidth*scale);canvas.height=Math.round(image.naturalHeight*scale);canvas.getContext('2d')!.drawImage(image,0,0,canvas.width,canvas.height);const {cv,scanner}=await engine();let mat:any,contour:any;try{mat=cv.imread(canvas);contour=scanner.findPaperContour(mat);if(!contour)return null;const p=scanner.getCornerPoints(contour);if(!p.topLeftCorner||!p.topRightCorner||!p.bottomRightCorner||!p.bottomLeftCorner)return null;return [{x:p.topLeftCorner.x/canvas.width,y:p.topLeftCorner.y/canvas.height},{x:p.topRightCorner.x/canvas.width,y:p.topRightCorner.y/canvas.height},{x:p.bottomRightCorner.x/canvas.width,y:p.bottomRightCorner.y/canvas.height},{x:p.bottomLeftCorner.x/canvas.width,y:p.bottomLeftCorner.y/canvas.height}].map(p=>({x:Math.min(1,Math.max(0,p.x)),y:Math.min(1,Math.max(0,p.y))}))}finally{mat?.delete?.();contour?.delete?.();canvas.width=canvas.height=1}}
-export async function renderPerspectiveScan(original:string,points:CropPoint[],mode:ImageMode):Promise<string>{if(mode==='original')return original;const image=await loadImage(original);const {scanner}=await engine();const src=points.map(p=>({x:p.x*image.naturalWidth,y:p.y*image.naturalHeight}));const w=Math.round((dist(src[0],src[1])+dist(src[2],src[3]))/2),h=Math.round((dist(src[0],src[3])+dist(src[1],src[2]))/2),scale=Math.min(1,imageConfig.scannedMaxEdge/Math.max(w,h));const canvas=scanner.extractPaper(image,Math.max(1,Math.round(w*scale)),Math.max(1,Math.round(h*scale)),{topLeftCorner:src[0],topRightCorner:src[1],bottomRightCorner:src[2],bottomLeftCorner:src[3]});if(!canvas)throw new Error('透视扫描失败');const ctx=canvas.getContext('2d')!;enhance(ctx,canvas.width,canvas.height,mode);const result=canvas.toDataURL('image/webp',imageConfig.scannedQuality);canvas.width=canvas.height=1;return result}
-export async function renderScan(original:string, points:CropPoint[], mode:ImageMode, rotation=0):Promise<string>{const image=await loadImage(original);const src=document.createElement('canvas');src.width=image.naturalWidth;src.height=image.naturalHeight;src.getContext('2d')!.drawImage(image,0,0);const p=points.map(x=>({x:x.x*src.width,y:x.y*src.height}));const width=Math.max(1,Math.round((dist(p[0],p[1])+dist(p[2],p[3]))/2)),height=Math.max(1,Math.round((dist(p[0],p[3])+dist(p[1],p[2]))/2));const scale=Math.min(1,imageConfig.scannedMaxEdge/Math.max(width,height));const out=document.createElement('canvas');out.width=Math.round(width*scale);out.height=Math.round(height*scale);const c=out.getContext('2d')!;c.save();c.translate(out.width/2,out.height/2);c.rotate(rotation*Math.PI/180);c.translate(-out.width/2,-out.height/2);const a=p[0],b=p[1],d=p[3];c.setTransform((b.x-a.x)/out.width,(b.y-a.y)/out.width,(d.x-a.x)/out.height,(d.y-a.y)/out.height,a.x,a.y);c.drawImage(src,0,0);c.restore(); if(mode!=='original') enhance(c,out.width,out.height,mode);return out.toDataURL('image/webp',imageConfig.scannedQuality)}
-function dist(a:{x:number;y:number},b:{x:number;y:number}){return Math.hypot(a.x-b.x,a.y-b.y)};function loadImage(src:string){return new Promise<HTMLImageElement>((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(new Error('图片解码失败'));i.src=src})};function enhance(x:CanvasRenderingContext2D,w:number,h:number,mode:ImageMode){const d=x.getImageData(0,0,w,h);for(let i=0;i<d.data.length;i+=4){let[r,g,b]=[d.data[i],d.data[i+1],d.data[i+2]];if(mode==='gray'){const l=.299*r+.587*g+.114*b;r=g=b=Math.min(255,Math.max(0,(l-128)*1.25+150))}else{r=Math.min(255,r*1.12+8);g=Math.min(255,g*1.12+8);b=Math.min(255,b*1.12+8)}d.data[i]=r;d.data[i+1]=g;d.data[i+2]=b}x.putImageData(d,0,0)}
-async function toData(file:File,max:number,quality:number,mode:ImageMode){const bitmap=await createImageBitmap(file); const scale=Math.min(1,max/Math.max(bitmap.width,bitmap.height));const w=Math.round(bitmap.width*scale),h=Math.round(bitmap.height*scale);const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d')!;x.drawImage(bitmap,0,0,w,h);if(mode!=='original'){const d=x.getImageData(0,0,w,h);for(let i=0;i<d.data.length;i+=4){let r=d.data[i],g=d.data[i+1],b=d.data[i+2];if(mode==='gray'){const l=.299*r+.587*g+.114*b; r=g=b=Math.min(255,Math.max(0,(l-128)*1.25+150))}else{r=Math.min(255,r*1.12+8);g=Math.min(255,g*1.12+8);b=Math.min(255,b*1.12+8)}d.data[i]=r;d.data[i+1]=g;d.data[i+2]=b}x.putImageData(d,0,0)}return c.toDataURL('image/webp',quality)}
+
+const id = () => generateId('image')
+
+export const fullPoints = (): CropPoint[] => [
+  { x: 0, y: 0 },
+  { x: 1, y: 0 },
+  { x: 1, y: 1 },
+  { x: 0, y: 1 },
+]
+
+/** Store an unmodified compressed original. A scan is created only in ScanEditor. */
+export async function makeAsset(file: File, _legacyMode?: ImageMode | number): Promise<ImageAsset> {
+  void _legacyMode
+  if (!imageConfig.accepted.includes(file.type)) throw new Error('仅支持 JPG、PNG 或 WebP 图片')
+  if (file.size > imageConfig.maxFileSize) throw new Error('图片超过 20MB，请先压缩后上传')
+
+  const original = await compressOriginal(file)
+  return {
+    id: id(), order: 0, original, scanned: original, mode: 'original', name: file.name,
+    cropPoints: fullPoints(), rotation: 0,
+  }
+}
+
+type ScanPoint = { x: number; y: number }
+type ScanCorners = {
+  topLeftCorner: ScanPoint; topRightCorner: ScanPoint
+  bottomRightCorner: ScanPoint; bottomLeftCorner: ScanPoint
+}
+type ScannerInstance = {
+  findPaperContour: (mat: unknown) => { delete?: () => void } | null
+  getCornerPoints: (contour: unknown) => ScanCorners
+  extractPaper: (image: HTMLImageElement, width: number, height: number, points: ScanCorners) => HTMLCanvasElement | null
+}
+
+/** Load OpenCV and jscanify only once a user opens the scanner. */
+async function engine(): Promise<{ cv: any; scanner: ScannerInstance }> {
+  const cvModule: any = await import('@techstark/opencv-js')
+  const cv = await (cvModule.default ?? cvModule.cv ?? window.cv)
+  // jscanify/client is a UMD module that resolves OpenCV through the browser
+  // global name `cv`, so it must be assigned before importing jscanify.
+  window.cv = cv
+  const scannerModule: any = await import('jscanify/client')
+  const Scanner = scannerModule.default ?? window.jscanify
+  if (!cv?.Mat || typeof Scanner !== 'function') throw new Error('扫描组件加载失败')
+  return { cv, scanner: new Scanner() }
+}
+
+export async function detectDocument(original: string): Promise<CropPoint[] | null> {
+  const image = await loadImage(original)
+  const scale = Math.min(1, 1000 / Math.max(image.naturalWidth, image.naturalHeight))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+  canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+  const { cv, scanner } = await engine()
+  let mat: any
+  let contour: { delete?: () => void } | null = null
+  try {
+    mat = cv.imread(canvas)
+    contour = scanner.findPaperContour(mat)
+    if (!contour) return null
+    const corners = scanner.getCornerPoints(contour)
+    if (!hasCorners(corners)) return null
+    return orderPoints([
+      { x: corners.topLeftCorner.x / canvas.width, y: corners.topLeftCorner.y / canvas.height },
+      { x: corners.topRightCorner.x / canvas.width, y: corners.topRightCorner.y / canvas.height },
+      { x: corners.bottomRightCorner.x / canvas.width, y: corners.bottomRightCorner.y / canvas.height },
+      { x: corners.bottomLeftCorner.x / canvas.width, y: corners.bottomLeftCorner.y / canvas.height },
+    ])
+  } finally {
+    mat?.delete?.()
+    contour?.delete?.()
+    canvas.width = 1
+    canvas.height = 1
+  }
+}
+
+/** Four source points -> jscanify perspective correction -> ErrorLoop enhancement. */
+export async function renderPerspectiveScan(original: string, normalizedPoints: CropPoint[], mode: ImageMode): Promise<string> {
+  if (normalizedPoints.length !== 4) throw new Error('需要四个有效的裁切角点')
+  const image = await loadImage(original)
+  const points = orderPoints(normalizedPoints).map((point) => ({
+    x: point.x * image.naturalWidth,
+    y: point.y * image.naturalHeight,
+  }))
+  const outputWidth = averageDistance(points[0], points[1], points[2], points[3])
+  const outputHeight = averageDistance(points[0], points[3], points[1], points[2])
+  const scale = Math.min(1, imageConfig.scannedMaxEdge / Math.max(outputWidth, outputHeight))
+  const canvas = await applyPerspectiveCorrection(
+    image, points, Math.max(1, Math.round(outputWidth * scale)), Math.max(1, Math.round(outputHeight * scale)),
+  )
+  try {
+    applyEnhancement(canvas, mode)
+    return canvas.toDataURL('image/webp', imageConfig.scannedQuality)
+  } finally {
+    canvas.width = 1
+    canvas.height = 1
+  }
+}
+
+async function applyPerspectiveCorrection(image: HTMLImageElement, points: ScanPoint[], width: number, height: number) {
+  const { scanner } = await engine()
+  const canvas = scanner.extractPaper(image, width, height, {
+    topLeftCorner: points[0], topRightCorner: points[1], bottomRightCorner: points[2], bottomLeftCorner: points[3],
+  })
+  if (!canvas) throw new Error('透视扫描失败')
+  return canvas
+}
+
+/** ErrorLoop treatment, deliberately run after the perspective output is ready. */
+function applyEnhancement(canvas: HTMLCanvasElement, mode: ImageMode) {
+  if (mode === 'original') return
+  const context = canvas.getContext('2d')!
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
+  for (let index = 0; index < pixels.data.length; index += 4) {
+    let red = pixels.data[index]
+    let green = pixels.data[index + 1]
+    let blue = pixels.data[index + 2]
+    if (mode === 'gray') {
+      const lightness = 0.299 * red + 0.587 * green + 0.114 * blue
+      red = green = blue = clamp((lightness - 128) * 1.25 + 150, 0, 255)
+    } else {
+      red = clamp(red * 1.12 + 8, 0, 255)
+      green = clamp(green * 1.12 + 8, 0, 255)
+      blue = clamp(blue * 1.12 + 8, 0, 255)
+    }
+    pixels.data[index] = red
+    pixels.data[index + 1] = green
+    pixels.data[index + 2] = blue
+  }
+  context.putImageData(pixels, 0, 0)
+}
+
+function orderPoints(points: ScanPoint[]): ScanPoint[] {
+  const bounded = points.map((point) => ({ x: clamp(point.x, 0, 1), y: clamp(point.y, 0, 1) }))
+  const topLeft = bounded.reduce((best, point) => point.x + point.y < best.x + best.y ? point : best)
+  const bottomRight = bounded.reduce((best, point) => point.x + point.y > best.x + best.y ? point : best)
+  const topRight = bounded.reduce((best, point) => point.y - point.x < best.y - best.x ? point : best)
+  const bottomLeft = bounded.reduce((best, point) => point.y - point.x > best.y - best.x ? point : best)
+  return [topLeft, topRight, bottomRight, bottomLeft]
+}
+
+function hasCorners(corners: Partial<ScanCorners> | null | undefined): corners is ScanCorners {
+  return Boolean(corners?.topLeftCorner && corners.topRightCorner && corners.bottomRightCorner && corners.bottomLeftCorner)
+}
+function averageDistance(a: ScanPoint, b: ScanPoint, c: ScanPoint, d: ScanPoint) { return (distance(a, b) + distance(c, d)) / 2 }
+function distance(a: ScanPoint, b: ScanPoint) { return Math.hypot(a.x - b.x, a.y - b.y) }
+function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)) }
+function loadImage(source: string) { return new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error('图片解码失败')); image.src = source }) }
+
+async function compressOriginal(file: File) {
+  const bitmap = await createImageBitmap(file)
+  try {
+    const scale = Math.min(1, imageConfig.originalMaxEdge / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    const result = canvas.toDataURL('image/webp', imageConfig.originalQuality)
+    canvas.width = 1
+    canvas.height = 1
+    return result
+  } finally {
+    bitmap.close()
+  }
+}
