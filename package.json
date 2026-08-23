@@ -5,8 +5,8 @@
 	"packageManager": "pnpm@11.19.0",
 	"version": "0.1.0",
 	"scripts": {
-		"dev": "vite",
-		"build": "tsc -b && vite build",
+		"dev": "node scripts/prepare-scanner-runtimes.mjs && vite",
+		"build": "node scripts/prepare-scanner-runtimes.mjs && tsc -b && vite build",
 		"lint": "eslint src",
 		"preview": "vite preview"
 	},

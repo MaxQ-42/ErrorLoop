@@ -5,3 +5,4 @@
 .scan-image-frame polygon { fill: #2457d630; stroke: #79a6ff; stroke-width: 1.2; }
 .scan-image-frame circle { fill: #fff; stroke: #2457d6; stroke-width: 1.5; pointer-events: auto; touch-action: none; }
 .scanner-fallback { display: block; margin: 12px auto 0; background: var(--soft); padding: 9px; border-radius: 9px; color: var(--muted); font-size: 13px; }
+.retry-scan { display: block; width: 100%; margin: 10px 0; background: var(--soft); color: var(--accent); padding: 10px; border-radius: 9px; }

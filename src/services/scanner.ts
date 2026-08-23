@@ -1,6 +1,7 @@
 import { imageConfig } from '../config/imageConfig'
 import type { CropPoint, ImageAsset, ImageMode } from '../types'
 import { generateId } from '../utils/id'
+import { loadJscanify, loadOpenCV, resetScanEngineLoader } from './scanEngineLoader'
 
 const id = () => generateId('image')
 
@@ -35,17 +36,29 @@ type ScannerInstance = {
   extractPaper: (image: HTMLImageElement, width: number, height: number, points: ScanCorners) => HTMLCanvasElement | null
 }
 
-/** Load OpenCV and jscanify only once a user opens the scanner. */
+let scannerPromise: Promise<{ cv: any; scanner: ScannerInstance }> | null = null
+
+/** Load self-hosted OpenCV first, then jscanify, only once a user opens the scanner. */
 async function engine(): Promise<{ cv: any; scanner: ScannerInstance }> {
-  const cvModule: any = await import('@techstark/opencv-js')
-  const cv = await (cvModule.default ?? cvModule.cv ?? window.cv)
-  // jscanify/client is a UMD module that resolves OpenCV through the browser
-  // global name `cv`, so it must be assigned before importing jscanify.
-  window.cv = cv
-  const scannerModule: any = await import('jscanify/client')
-  const Scanner = scannerModule.default ?? window.jscanify
-  if (!cv?.Mat || typeof Scanner !== 'function') throw new Error('扫描组件加载失败')
-  return { cv, scanner: new Scanner() }
+  if (!scannerPromise) {
+    scannerPromise = (async () => {
+      const cv = await loadOpenCV()
+      window.cv = cv
+      const Scanner = await loadJscanify()
+      return { cv, scanner: new Scanner() as ScannerInstance }
+    })().catch((error) => {
+      scannerPromise = null
+      throw error
+    })
+  }
+  return scannerPromise
+}
+
+export async function preloadScanEngine() { await engine() }
+
+export function retryScanEngine() {
+  scannerPromise = null
+  resetScanEngineLoader()
 }
 
 export async function detectDocument(original: string): Promise<CropPoint[] | null> {

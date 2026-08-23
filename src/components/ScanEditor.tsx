@@ -2,28 +2,33 @@ import { ArrowLeft } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import './ScanEditor.css'
 import type { CropPoint, ImageAsset, ImageMode } from '../types'
-import { detectDocument, fullPoints, renderPerspectiveScan } from '../services/scanner'
+import { detectDocument, fullPoints, preloadScanEngine, renderPerspectiveScan, retryScanEngine } from '../services/scanner'
 
 type Props = { asset: ImageAsset; onSave: (asset: ImageAsset) => void; onClose: () => void }
+type EngineState = 'idle' | 'loading' | 'ready' | 'failed'
 
 export function ScanEditor({ asset, onSave, onClose }: Props) {
   const [points, setPoints] = useState<CropPoint[]>(asset.cropPoints?.length === 4 ? asset.cropPoints : fullPoints())
   const [mode, setMode] = useState<ImageMode>(asset.mode)
   const [busy, setBusy] = useState(false)
+  const [engineState, setEngineState] = useState<EngineState>('idle')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const image = useRef<HTMLImageElement>(null)
   const dragging = useRef<number | null>(null)
 
   const autoDetect = async () => {
-    setBusy(true); setError(''); setStatus('正在加载扫描组件…')
+    setBusy(true); setError(''); setEngineState('loading'); setStatus('正在加载扫描组件…')
     try {
+      await preloadScanEngine()
+      setEngineState('ready')
       setStatus('正在自动检测纸张边缘…')
       const detected = await detectDocument(asset.original)
       if (detected) setPoints(detected)
       else setError('未检测到可靠边缘，已保留整张图片，可手动调整四角。')
     } catch {
-      setError('扫描组件不可用，仍可手动调整四角或直接使用原图。')
+      setEngineState('failed')
+      setError('扫描组件加载失败，请检查网络后重试。你仍可保存原图。')
     } finally {
       setBusy(false); setStatus('')
     }
@@ -45,7 +50,8 @@ export function ScanEditor({ asset, onSave, onClose }: Props) {
       const scanned = await renderPerspectiveScan(asset.original, points, mode)
       onSave({ ...asset, cropPoints: points, mode, scanned })
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '扫描失败，可直接使用原图后继续保存')
+      setEngineState('failed')
+      setError(reason instanceof Error ? reason.message : '扫描组件加载失败，请检查网络后重试。')
     } finally {
       setBusy(false); setStatus('')
     }
@@ -77,7 +83,8 @@ export function ScanEditor({ asset, onSave, onClose }: Props) {
     </div>
     {status && <p className="hint">{status}</p>}
     {error && <div className="error">{error}</div>}
-    <button className="save" disabled={busy} onClick={saveScan}>{busy ? '正在处理图片…' : '生成扫描并保存'}</button>
+    {engineState === 'failed' && <button className="retry-scan" disabled={busy} onClick={() => { retryScanEngine(); void autoDetect() }}>重新加载扫描组件</button>}
+    <button className="save" disabled={busy || engineState === 'failed'} onClick={saveScan}>{busy ? '正在处理图片…' : '生成扫描并保存'}</button>
     <button className="scanner-fallback" disabled={busy} onClick={() => onSave({ ...asset, cropPoints: fullPoints(), mode: 'original', scanned: asset.original })}>扫描失败时直接使用原图</button>
   </div>
 }
