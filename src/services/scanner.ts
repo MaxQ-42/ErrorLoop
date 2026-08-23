@@ -1,6 +1,7 @@
 import { imageConfig } from '../config/imageConfig'
 import type { CropPoint, ImageAsset, ImageMode } from '../types'
-const id=()=>crypto.randomUUID()
+import { generateId } from '../utils/id'
+const id=()=>generateId('image')
 export async function makeAsset(file:File, mode:ImageMode|number='gray'):Promise<ImageAsset>{ const selected:ImageMode=typeof mode==='string'?mode:'gray';if(!imageConfig.accepted.includes(file.type)) throw new Error('仅支持 JPG、PNG 或 WebP 图片'); if(file.size>imageConfig.maxFileSize) throw new Error('图片超过 20MB，请先压缩后上传')
  const original=await toData(file,imageConfig.originalMaxEdge,imageConfig.originalQuality,'original'); const scanned= selected==='original'?original:await toData(file,imageConfig.scannedMaxEdge,imageConfig.scannedQuality,selected); return {id:id(),order:0,original,scanned,mode:selected,name:file.name,cropPoints:fullPoints(),rotation:0} }
 export const fullPoints=():CropPoint[]=>[{x:0,y:0},{x:1,y:0},{x:1,y:1},{x:0,y:1}]

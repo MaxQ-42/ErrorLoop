@@ -1,0 +1,2 @@
+/** Works in secure, insecure LAN, and standalone PWA contexts. */
+export function generateId(prefix='el'):string{const c=globalThis.crypto;if(typeof c?.randomUUID==='function')return `${prefix}_${c.randomUUID()}`;const bytes=new Uint8Array(16);if(typeof c?.getRandomValues==='function')c.getRandomValues(bytes);else for(let i=0;i<bytes.length;i++)bytes[i]=Math.floor(Math.random()*256);return `${prefix}_${Date.now().toString(36)}_${[...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')}`}
