@@ -1,0 +1,2 @@
+import { CirclePlus, FolderKanban, House, NotebookPen, Settings } from 'lucide-react';import { NavLink, useNavigate } from 'react-router-dom'
+export function Nav(){const nav=useNavigate();return <nav><NavLink to="/"><House/><span>今日</span></NavLink><NavLink to="/library"><NotebookPen/><span>错题</span></NavLink><button className="add-nav" aria-label="添加" onClick={()=>nav('/add')}><CirclePlus/><span>添加</span></button><NavLink to="/boards"><FolderKanban/><span>板块</span></NavLink><NavLink to="/settings"><Settings/><span>我的</span></NavLink></nav>}

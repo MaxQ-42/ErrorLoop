@@ -1,0 +1,2 @@
+import type { Board } from '../../types';import { localAdapter } from '../../adapters/local/store'
+export const boardService={getAll:()=>localAdapter.read().boards,create(b:Board){this.update(b)},update(b:Board){const s=localAdapter.read();s.boards=[b,...s.boards.filter(x=>x.id!==b.id)];localAdapter.write(s)},delete(id:string){const s=localAdapter.read();s.boards=s.boards.filter(x=>x.id!==id);s.questions.forEach(q=>q.boardIds=q.boardIds.filter(x=>x!==id));s.papers.forEach(p=>p.boardIds=p.boardIds.filter(x=>x!==id));localAdapter.write(s)}}

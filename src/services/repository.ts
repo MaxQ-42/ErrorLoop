@@ -1,0 +1,3 @@
+import type { Board, Paper, Question } from '../types';import { localAdapter } from '../adapters/local/store';import { boardService } from './boards/boardService';import { paperService } from './papers/paperService';import { questionService } from './questions/questionService'
+/** Backward-compatible facade; page components never access browser storage directly. */
+export const repo={get:()=>{const s=localAdapter.read();return {boards:s.boards,questions:s.questions,papers:s.papers}},saveQuestion:(q:Question)=>questionService.update(q),savePaper:(p:Paper)=>paperService.update(p),saveBoard:(b:Board)=>boardService.update(b),deleteBoard:(id:string)=>boardService.delete(id)}
