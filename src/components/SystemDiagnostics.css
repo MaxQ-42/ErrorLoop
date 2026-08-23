@@ -1,0 +1,7 @@
+.diagnostics button { margin: 10px 8px 0 0; }
+.diagnostic-refresh { padding: 10px; color: var(--accent); }
+.diagnostics dl { margin: 14px 0 0; }
+.diagnostics dl > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px; }
+.diagnostics dt { font-weight: 700; }
+.diagnostics dd { margin: 0; overflow-wrap: anywhere; color: var(--muted); }
+.pwa-update { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); z-index: 12; width: max-content; max-width: calc(100vw - 32px); background: var(--accent); color: #fff; padding: 11px 14px; border-radius: 999px; box-shadow: 0 8px 22px #0004; }

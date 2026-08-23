@@ -1,7 +1,9 @@
 import { imageConfig } from '../config/imageConfig'
 import type { CropPoint, ImageAsset, ImageMode } from '../types'
 import { generateId } from '../utils/id'
-import { loadJscanify, loadOpenCV, resetScanEngineLoader } from './scanEngineLoader'
+import { getScanRuntimeState, loadJscanify, loadOpenCV, resetScanEngineLoader } from './scanEngineLoader'
+import { recordDiagnostic, recordDiagnosticFailure, runtimeDetails } from './mobileDiagnostics'
+import { decodeImageFile } from './imageDecoder'
 
 const id = () => generateId('image')
 
@@ -15,10 +17,14 @@ export const fullPoints = (): CropPoint[] => [
 /** Store an unmodified compressed original. A scan is created only in ScanEditor. */
 export async function makeAsset(file: File, _legacyMode?: ImageMode | number): Promise<ImageAsset> {
   void _legacyMode
+  recordDiagnostic('image-selected', { mime: file.type, size: file.size, ...runtimeDetails() })
+  if (file.type === 'image/heic' || file.type === 'image/heif') throw new Error('HEIC/HEIF 图片暂不支持，请在相册中转换为 JPG 后再上传')
   if (!imageConfig.accepted.includes(file.type)) throw new Error('仅支持 JPG、PNG 或 WebP 图片')
   if (file.size > imageConfig.maxFileSize) throw new Error('图片超过 20MB，请先压缩后上传')
 
-  const original = await compressOriginal(file)
+  let original: string
+  try { original = await compressOriginal(file) }
+  catch (error) { recordDiagnosticFailure('failed', error, { phase: 'image-decoding', mime: file.type, size: file.size }); throw error }
   return {
     id: id(), order: 0, original, scanned: original, mode: 'original', name: file.name,
     cropPoints: fullPoints(), rotation: 0,
@@ -42,12 +48,19 @@ let scannerPromise: Promise<{ cv: any; scanner: ScannerInstance }> | null = null
 async function engine(): Promise<{ cv: any; scanner: ScannerInstance }> {
   if (!scannerPromise) {
     scannerPromise = (async () => {
+      recordDiagnostic('scanner-loading')
+      recordDiagnostic('opencv-loading')
       const cv = await loadOpenCV()
+      recordDiagnostic('opencv-ready')
       window.cv = cv
+      recordDiagnostic('jscanify-loading')
       const Scanner = await loadJscanify()
-      return { cv, scanner: new Scanner() as ScannerInstance }
+      const value = { cv, scanner: new Scanner() as ScannerInstance }
+      recordDiagnostic('scanner-ready')
+      return value
     })().catch((error) => {
       scannerPromise = null
+      recordDiagnosticFailure('failed', error, { phase: 'scanner-loading' })
       throw error
     })
   }
@@ -61,7 +74,26 @@ export function retryScanEngine() {
   resetScanEngineLoader()
 }
 
+export function getScanEngineState() {
+  const runtime = getScanRuntimeState()
+  return { ...runtime, scanner: scannerPromise ? 'loading-or-ready' : 'idle' }
+}
+
+export async function testScanEngine() {
+  const { cv, scanner } = await engine()
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 2
+  const mat = cv.imread(canvas)
+  try {
+    if (!mat || typeof scanner.findPaperContour !== 'function') throw new Error('扫描器初始化不完整')
+  } finally {
+    mat?.delete?.()
+    canvas.width = canvas.height = 1
+  }
+}
+
 export async function detectDocument(original: string): Promise<CropPoint[] | null> {
+  recordDiagnostic('document-detecting')
   const image = await loadImage(original)
   const scale = Math.min(1, 1000 / Math.max(image.naturalWidth, image.naturalHeight))
   const canvas = document.createElement('canvas')
@@ -94,6 +126,7 @@ export async function detectDocument(original: string): Promise<CropPoint[] | nu
 
 /** Four source points -> jscanify perspective correction -> ErrorLoop enhancement. */
 export async function renderPerspectiveScan(original: string, normalizedPoints: CropPoint[], mode: ImageMode): Promise<string> {
+  recordDiagnostic('perspective-processing')
   if (normalizedPoints.length !== 4) throw new Error('需要四个有效的裁切角点')
   const image = await loadImage(original)
   const points = orderPoints(normalizedPoints).map((point) => ({
@@ -166,18 +199,20 @@ function clamp(value: number, min: number, max: number) { return Math.min(max, M
 function loadImage(source: string) { return new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error('图片解码失败')); image.src = source }) }
 
 async function compressOriginal(file: File) {
-  const bitmap = await createImageBitmap(file)
+  recordDiagnostic('image-decoding', { mime: file.type, size: file.size })
+  const decoded = await decodeImageFile(file)
   try {
-    const scale = Math.min(1, imageConfig.originalMaxEdge / Math.max(bitmap.width, bitmap.height))
+    recordDiagnostic('image-ready', { mime: file.type, size: file.size, width: decoded.width, height: decoded.height })
+    const scale = Math.min(1, imageConfig.originalMaxEdge / Math.max(decoded.width, decoded.height))
     const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
-    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    canvas.width = Math.max(1, Math.round(decoded.width * scale))
+    canvas.height = Math.max(1, Math.round(decoded.height * scale))
+    canvas.getContext('2d')!.drawImage(decoded.source, 0, 0, canvas.width, canvas.height)
     const result = canvas.toDataURL('image/webp', imageConfig.originalQuality)
     canvas.width = 1
     canvas.height = 1
     return result
   } finally {
-    bitmap.close()
+    decoded.dispose()
   }
 }

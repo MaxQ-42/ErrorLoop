@@ -20,6 +20,7 @@ export function ScanEditor({ asset, onSave, onClose }: Props) {
   const autoDetect = async () => {
     setBusy(true); setError(''); setEngineState('loading'); setStatus('正在加载扫描组件…')
     try {
+      await nextPaint()
       await preloadScanEngine()
       setEngineState('ready')
       setStatus('正在自动检测纸张边缘…')
@@ -85,8 +86,9 @@ export function ScanEditor({ asset, onSave, onClose }: Props) {
     {error && <div className="error">{error}</div>}
     {engineState === 'failed' && <button className="retry-scan" disabled={busy} onClick={() => { retryScanEngine(); void autoDetect() }}>重新加载扫描组件</button>}
     <button className="save" disabled={busy || engineState === 'failed'} onClick={saveScan}>{busy ? '正在处理图片…' : '生成扫描并保存'}</button>
-    <button className="scanner-fallback" disabled={busy} onClick={() => onSave({ ...asset, cropPoints: fullPoints(), mode: 'original', scanned: asset.original })}>扫描失败时直接使用原图</button>
+    <button className="scanner-fallback" onClick={() => onSave({ ...asset, cropPoints: fullPoints(), mode: 'original', scanned: asset.original })}>直接使用原图</button>
   </div>
 }
 
 function clamp(value: number) { return Math.min(1, Math.max(0, value)) }
+function nextPaint() { return new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) }

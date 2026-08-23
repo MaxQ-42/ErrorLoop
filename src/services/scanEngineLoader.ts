@@ -8,14 +8,19 @@ type JscanifyConstructor = new () => unknown
 
 let openCvPromise: Promise<OpenCv> | null = null
 let jscanifyPromise: Promise<JscanifyConstructor> | null = null
+let openCvState: 'idle' | 'loading' | 'ready' | 'failed' = 'idle'
+let jscanifyState: 'idle' | 'loading' | 'ready' | 'failed' = 'idle'
 
 export async function loadOpenCV(): Promise<OpenCv> {
   if (isOpenCvReady(window.cv)) return window.cv
   if (!openCvPromise) {
+    openCvState = 'loading'
     openCvPromise = loadScript('errorloop-opencv-runtime', assetUrl('vendor/opencv/opencv.js'))
       .then(waitForOpenCv)
+      .then((cv) => { openCvState = 'ready'; return cv })
       .catch((error) => {
         openCvPromise = null
+        openCvState = 'failed'
         reportLoadError('OpenCV runtime', error)
         throw new Error('扫描组件加载失败，请检查网络后重试。')
       })
@@ -26,13 +31,16 @@ export async function loadOpenCV(): Promise<OpenCv> {
 export async function loadJscanify(): Promise<JscanifyConstructor> {
   if (typeof window.jscanify === 'function') return window.jscanify as JscanifyConstructor
   if (!jscanifyPromise) {
+    jscanifyState = 'loading'
     jscanifyPromise = loadScript('errorloop-jscanify-runtime', assetUrl('vendor/jscanify/jscanify.js'))
       .then(() => {
         if (typeof window.jscanify !== 'function') throw new Error('jscanify 初始化失败')
+        jscanifyState = 'ready'
         return window.jscanify as JscanifyConstructor
       })
       .catch((error) => {
         jscanifyPromise = null
+        jscanifyState = 'failed'
         reportLoadError('jscanify runtime', error)
         throw new Error('扫描组件加载失败，请检查网络后重试。')
       })
@@ -47,7 +55,11 @@ export function resetScanEngineLoader() {
   document.getElementById('errorloop-jscanify-runtime')?.remove()
   window.cv = undefined
   window.jscanify = undefined
+  openCvState = 'idle'
+  jscanifyState = 'idle'
 }
+
+export function getScanRuntimeState() { return { opencv: openCvState, jscanify: jscanifyState } }
 
 function assetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path}`
